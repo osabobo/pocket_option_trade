@@ -28,12 +28,18 @@ def parse_utc_offset(tz_str):
     return datetime.timezone(sign * datetime.timedelta(hours=hours, minutes=minutes))
 async def main():
     from telethon import TelegramClient, events
+    from telethon.sessions import StringSession
 
     api_id = int(os.environ["TELEGRAM_API_ID"])
     api_hash = os.environ["TELEGRAM_API_HASH"]
     source = os.environ["TELEGRAM_SOURCE"]
 
-    client = TelegramClient("telegram_signal_agent", api_id, api_hash)
+    session_str = os.getenv("TELEGRAM_SESSION_STRING")
+    if session_str:
+        client = TelegramClient(StringSession(session_str), api_id, api_hash)
+    else:
+        client = TelegramClient("telegram_signal_agent", api_id, api_hash)
+    
     risk = RiskEngine()
     if os.getenv("POCKET_EXECUTOR", "simulator").lower() == "pocket_demo":
         from .pocket_option_demo import PocketOptionDemoExecutor
