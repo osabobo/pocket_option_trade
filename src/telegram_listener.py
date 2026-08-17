@@ -26,7 +26,28 @@ def parse_utc_offset(tz_str):
     hours = int(parts[0])
     minutes = int(parts[1]) if len(parts) > 1 else 0
     return datetime.timezone(sign * datetime.timedelta(hours=hours, minutes=minutes))
+
+def start_dummy_server():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    port = int(os.environ.get("PORT", 8080))
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Bot is running!")
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"Dummy web server started on port {port} for Render health checks")
+
 async def main():
+    if "PORT" in os.environ:
+        start_dummy_server()
+    
     from telethon import TelegramClient, events
     from telethon.sessions import StringSession
 
