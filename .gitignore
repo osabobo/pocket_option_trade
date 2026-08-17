@@ -1,0 +1,20 @@
+# Environments
+.env
+.venv313/
+venv/
+env/
+.venv/
+agent/
+__pycache__/
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+
+# App-specific
+chrome_profile/
+playwright_profile/
+*.session
+*.log
+websocket_debug.log
