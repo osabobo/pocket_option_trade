@@ -117,19 +117,55 @@ async def main():
             return
         
         if signal.signal_time:
-            tz = parse_utc_offset(signal.timezone)
-            now = datetime.datetime.now(tz)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
             parts = list(map(int, signal.signal_time.split(':')))
-            target = now.replace(hour=parts[0], minute=parts[1], second=parts[2], microsecond=0)
             
-            # If the target is within the next 24 hours, sleep until then
-            delay = (target - now).total_seconds()
-            if 0 < delay <= 86400:
-                print(f"[SCHEDULE] Signal received. Waiting {delay:.1f} seconds until {target}...")
-                await asyncio.sleep(delay)
-                print(f"[SCHEDULE] Executing scheduled trade now!")
-            elif delay < -60:
-                print(f"[WARNING] Signal time {target} is in the past! Rejecting trade.")
+            best_delay = None
+            
+            # First, check the timezone they explicitly provided
+            if signal.timezone:
+                tz = parse_utc_offset(signal.timezone)
+                now_tz = now_utc.astimezone(tz)
+                target_tz = now_tz.replace(hour=parts[0], minute=parts[1], second=parts[2], microsecond=0)
+                if (target_tz - now_tz).total_seconds() < -43200:
+                    target_tz += datetime.timedelta(days=1)
+                delay = (target_tz - now_tz).total_seconds()
+                
+                # If the delay is sensible (between -1 min and 1 hour), trust it
+                if -60 <= delay <= 3600:
+                    best_delay = delay
+            
+            # If the provided timezone was broken (e.g. delay is 4 hours or -20 hours),
+            # sweep all possible global timezones to find the intended one.
+            if best_delay is None:
+                valid_delays = []
+                for offset_hours in range(-12, 15):
+                    tz = datetime.timezone(datetime.timedelta(hours=offset_hours))
+                    now_tz = now_utc.astimezone(tz)
+                    target_tz = now_tz.replace(hour=parts[0], minute=parts[1], second=parts[2], microsecond=0)
+                    
+                    if (target_tz - now_tz).total_seconds() < -43200:
+                        target_tz += datetime.timedelta(days=1)
+                    
+                    delay = (target_tz - now_tz).total_seconds()
+                    
+                    # Assume typical signals are for 0 to 30 mins in the future
+                    if -60 <= delay <= 1800:
+                        valid_delays.append(delay)
+                
+                if valid_delays:
+                    # Pick the smallest positive delay
+                    best_delay = min([d for d in valid_delays if d >= 0] or valid_delays)
+            
+            if best_delay is not None:
+                if best_delay > 0:
+                    print(f"[SCHEDULE] Signal time heuristically resolved. Waiting {best_delay:.1f} seconds...")
+                    await asyncio.sleep(best_delay)
+                    print(f"[SCHEDULE] Executing scheduled trade now!")
+                else:
+                    print(f"[SCHEDULE] Signal is for RIGHT NOW (delay {best_delay:.1f}s). Executing immediately!")
+            else:
+                print(f"[WARNING] Signal time is unresolvable or too far in the past/future! Rejecting trade.")
                 return
 
         ok, reason = risk.approve(signal)
