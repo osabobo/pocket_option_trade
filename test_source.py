@@ -19,21 +19,33 @@ async def main():
 
     print("Successfully connected to Telegram!")
 
-    try:
-        # Check if the source exists and is accessible
-        entity = await client.get_entity(source)
-        name = getattr(entity, 'title', getattr(entity, 'username', 'Unknown'))
-        print(f"[SUCCESS] Successfully found the source! Resolved as: {name}")
-    except Exception as e:
-        print(f"[ERROR] Could not find the source '{source}'. Error: {e}")
-        print("Tip: If it's a private group, make sure you are a member and the name is spelled exactly as it appears.")
-        return
-
-    print("Listening for new messages... Send a message in 'osajobot' to test (Press Ctrl+C to exit).")
+    print("Listening for new messages... (Press Ctrl+C to exit).")
     
-    @client.on(events.NewMessage(chats=source))
+    source_clean = source.replace("@", "").lower() if source else ""
+
+    @client.on(events.NewMessage())
     async def handler(event):
-        print(f"[MESSAGE] Received a new message!")
+        chat = await event.get_chat()
+        chat_username = getattr(chat, 'username', '') or ""
+        chat_title = getattr(chat, 'title', '') or ""
+        chat_id = str(event.chat_id)
+
+        # Bulletproof source matching
+        if source_clean:
+            is_match = False
+            if chat_username.lower() == source_clean:
+                is_match = True
+            elif chat_title.lower() == source.lower():
+                is_match = True
+            elif chat_id == source:
+                is_match = True
+            elif source_clean in ["me", "self"] and event.is_private and event.out:
+                is_match = True
+            
+            if not is_match:
+                return
+
+        print(f"[MESSAGE] Received a new message in {chat_title or chat_username or chat_id}!")
         print(f"Text: {event.raw_text}")
 
     await client.run_until_disconnected()
