@@ -44,9 +44,25 @@ def start_dummy_server():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"Dummy web server started on port {port} for Render health checks")
 
+async def keep_alive_task():
+    url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("KEEP_ALIVE_URL")
+    if not url:
+        return
+    import aiohttp
+    print(f"Starting keep-alive ping loop for {url}")
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                await session.get(url)
+                print(f"[KEEP-ALIVE] Pinged {url} successfully to prevent Render sleep")
+            except Exception as e:
+                print(f"[KEEP-ALIVE] Ping failed: {e}")
+            await asyncio.sleep(600)  # Ping every 10 minutes (600 seconds)
+
 async def main():
     if "PORT" in os.environ:
         start_dummy_server()
+        asyncio.create_task(keep_alive_task())
     
     from telethon import TelegramClient, events
     from telethon.sessions import StringSession

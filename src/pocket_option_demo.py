@@ -26,11 +26,13 @@ class PocketOptionDemoExecutor(TradeExecutor):
             print("Fetching fresh SSID via automated login...")
             from .session_manager import get_fresh_ssid
             self.ssid = await get_fresh_ssid()
-            if not self.ssid:
-                raise RuntimeError(
-                    "POCKET_OPTION_SSID is missing and automated login failed. "
-                    "Ensure your email/password are in .env."
-                )
+            self.uid = os.environ.get("POCKET_OPTION_UID", self.uid)
+
+        if not self.ssid:
+            raise RuntimeError(
+                "POCKET_OPTION_SSID is missing and automated login failed. "
+                "Ensure your email/password are in .env."
+            )
 
         # The SDK is intentionally imported lazily so the rest of the project
         # can still be tested without a broker session.
@@ -42,9 +44,9 @@ class PocketOptionDemoExecutor(TradeExecutor):
         # SDK APIs can change because this is unofficial. Keep this code isolated.
         import logging
         self.client = PocketOptionClient(
-            logger=False,
-            socketio_logger=False,
-            engineio_logger=False,
+            logger=True,
+            socketio_logger=True,
+            engineio_logger=True,
         )
         auth_data = AuthorizationData(
             session=self.ssid,
@@ -69,23 +71,35 @@ class PocketOptionDemoExecutor(TradeExecutor):
         # event message (packet 42["auth", {...}]).
         
         # We also need to listen for data events because the server might not send "successauth" anymore
-        async def on_assets(data):
+        async def on_auth_success(*args):
             self.client.authorized_event.set()
-        self.client.add_on("updateAssets", on_assets)
+        self.client.add_on("auth/success", on_auth_success)
+        self.client.add_on("user_ready", on_auth_success)
         
         # MemoryDealsStorage expects authorization_data to be populated
         self.client.authorization_data = auth_data
-        await self.client.sio.emit("auth", auth_data.model_dump(by_alias=True))
+        
+        # Send the standard SDK auth payload. Note: The SDK serializes this properly.
+        await self.client.send("auth", auth_data)
         
         # Wait for the server to confirm authorization before accepting trades
         print("Waiting for broker authorization...")
-        try:
-            await asyncio.wait_for(self.client.authorized_event.wait(), timeout=15)
+        authorized = False
+        for _ in range(30):
+            if self.client.authorized_event.is_set():
+                authorized = True
+                break
+            if not self.client.sio.connected:
+                print("[WARNING] Socket disconnected while waiting for authorization.")
+                break
+            await asyncio.sleep(0.5)
+            
+        if authorized:
             print("[SUCCESS] Broker authorized and ready!")
-        except asyncio.TimeoutError:
+        else:
             # If this was a saved SSID, it's probably expired - try a fresh one
             if not force_fresh:
-                print("[WARNING] Saved SSID expired. Fetching a fresh one...")
+                print("[WARNING] Saved SSID expired or auth failed. Fetching a fresh one...")
                 try:
                     await self.client.disconnect()
                 except Exception:
@@ -94,7 +108,7 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 self.ssid = None
                 return await self._try_connect(force_fresh=True)
             else:
-                print("[WARNING] Authorization timeout - continuing anyway, trades may fail.")
+                print("[WARNING] Authorization failed - continuing anyway, trades may fail.")
         
         self.deals_storage = MemoryDealsStorage(self.client)
 
