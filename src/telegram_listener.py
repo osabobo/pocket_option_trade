@@ -85,10 +85,35 @@ async def main():
         executor = DemoExecutor()
 
 
-    @client.on(events.NewMessage(chats=source))
+    source_clean = source.replace("@", "").lower() if source else ""
+
+    @client.on(events.NewMessage())
     async def handler(event):
+        chat = await event.get_chat()
+        chat_username = getattr(chat, 'username', '') or ""
+        chat_title = getattr(chat, 'title', '') or ""
+        chat_id = str(event.chat_id)
+
+        # Bulletproof source matching
+        if source_clean:
+            is_match = False
+            if chat_username.lower() == source_clean:
+                is_match = True
+            elif chat_title.lower() == source.lower():
+                is_match = True
+            elif chat_id == source:
+                is_match = True
+            elif source_clean in ["me", "self"] and event.is_private and event.out:
+                is_match = True
+            
+            if not is_match:
+                return
+
+        print(f"[DEBUG] Received message in target chat: {repr(event.raw_text[:50])}...")
+        
         signal = parse_signal(event.raw_text or "", event.id)
         if not signal:
+            print("[DEBUG] Failed to parse message as a valid signal.")
             return
         
         if signal.signal_time:
