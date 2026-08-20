@@ -99,7 +99,7 @@ async def main():
             is_match = False
             if chat_username.lower() == source_clean:
                 is_match = True
-            elif chat_title.lower() == source.lower():
+            elif source.lower() in chat_title.lower():
                 is_match = True
             elif chat_id == source:
                 is_match = True

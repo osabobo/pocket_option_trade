@@ -30,6 +30,9 @@ async def main():
         chat_title = getattr(chat, 'title', '') or ""
         chat_id = str(event.chat_id)
 
+        print(f"[DEBUG-ALL] Received message from chat_username='{chat_username}', chat_title='{chat_title}', chat_id='{chat_id}'")
+        print(f"[DEBUG-ALL] Raw text: {event.raw_text[:20]}...")
+        
         # Bulletproof source matching
         if source_clean:
             is_match = False
@@ -43,6 +46,7 @@ async def main():
                 is_match = True
             
             if not is_match:
+                print(f"[DEBUG-ALL] Message ignored. {chat_username.lower()} != {source_clean}")
                 return
 
         print(f"[MESSAGE] Received a new message in {chat_title or chat_username or chat_id}!")
