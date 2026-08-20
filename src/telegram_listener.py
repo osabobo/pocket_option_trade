@@ -69,7 +69,7 @@ async def main():
 
     api_id = int(os.environ["TELEGRAM_API_ID"])
     api_hash = os.environ["TELEGRAM_API_HASH"]
-    source = os.environ["TELEGRAM_SOURCE"]
+    source = os.environ["TELEGRAM_SOURCE"].strip()
 
     session_str = os.getenv("TELEGRAM_SESSION_STRING")
     if session_str:
