@@ -9,9 +9,9 @@ MG_RE = re.compile(r"Max\s+(\d+)\s+martingale", re.I)
 
 def parse_signal(text: str, message_id: str | None = None) -> Signal | None:
     upper = text.upper()
-    if re.search(r"\b(UP|CALL)\b", upper):
+    if re.search(r"\b(UP|CALL|HIGH)\b", upper):
         direction = Direction.UP
-    elif re.search(r"\b(DOWN|PUT)\b", upper):
+    elif re.search(r"\b(DOWN|PUT|LOW)\b", upper):
         direction = Direction.DOWN
     else:
         return None
