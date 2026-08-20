@@ -94,6 +94,8 @@ async def main():
         chat_title = getattr(chat, 'title', '') or ""
         chat_id = str(event.chat_id)
 
+        print(f"[DEBUG-ALL] New message from: title='{chat_title}', username='{chat_username}', id='{chat_id}'")
+
         # Bulletproof source matching
         if source_clean:
             is_match = False
