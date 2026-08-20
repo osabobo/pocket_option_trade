@@ -115,6 +115,14 @@ async def main():
         if not signal:
             print("[DEBUG] Failed to parse message as a valid signal.")
             return
+            
+        destination = os.environ.get("FORWARD_DESTINATION")
+        if destination:
+            try:
+                await client.send_message(destination, event.message)
+                print(f"[FORWARDER] Successfully forwarded signal to {destination}.")
+            except Exception as e:
+                print(f"[FORWARDER] Error forwarding message: {e}")
         
         if signal.signal_time:
             now_utc = datetime.datetime.now(datetime.timezone.utc)
