@@ -146,9 +146,13 @@ async def main():
         chat = await event.get_chat()
         chat_username = getattr(chat, 'username', '') or ""
         chat_title = getattr(chat, 'title', '') or ""
+        # For private chats (User objects), build a display name from first/last name
+        chat_first = getattr(chat, 'first_name', '') or ""
+        chat_last = getattr(chat, 'last_name', '') or ""
+        chat_display_name = f"{chat_first} {chat_last}".strip()
         chat_id = str(event.chat_id)
 
-        print(f"[DEBUG-ALL] New message from: title='{chat_title}', username='{chat_username}', id='{chat_id}'")
+        print(f"[DEBUG-ALL] New message from: title='{chat_title}', username='{chat_username}', name='{chat_display_name}', id='{chat_id}'")
 
         # Bulletproof source matching for multiple sources
         if sources:
@@ -157,7 +161,10 @@ async def main():
                 if chat_username.lower() == src_clean:
                     is_match = True
                     break
-                elif src.lower() in chat_title.lower():
+                elif chat_title and src.lower() in chat_title.lower():
+                    is_match = True
+                    break
+                elif chat_display_name and src.lower() in chat_display_name.lower():
                     is_match = True
                     break
                 elif chat_id == src:
