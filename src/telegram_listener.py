@@ -77,7 +77,18 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
         mg_request = risk.make_request(signal)
         mg_request.amount = current_amount
         
-        result = await executor.place_trade(mg_request)
+        # Retry logic: if the broker rejects the trade, wait and try again
+        result = None
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            result = await executor.place_trade(mg_request)
+            if result.accepted and result.trade_id:
+                break
+            if attempt < max_retries:
+                print(f"[MARTINGALE] Trade rejected on attempt {attempt}/{max_retries}. Retrying in 3 seconds...")
+                await asyncio.sleep(3)
+            else:
+                print(f"[MARTINGALE] Trade rejected after {max_retries} attempts. Aborting martingale.")
         
         if mg_count == 0:
             risk.mark_submitted(signal)
@@ -86,6 +97,7 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
         
         if not result.accepted or not result.trade_id:
             print(f"[MARTINGALE] Trade rejected or missing trade_id. Aborting.")
+            await log_trade_to_sheets(signal, "REJECTED", mg_count)
             break
             
         print(f"[MARTINGALE] Waiting for trade {result.trade_id} to finish...")
