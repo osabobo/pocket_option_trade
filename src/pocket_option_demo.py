@@ -117,36 +117,16 @@ class PocketOptionDemoExecutor(TradeExecutor):
         from pocket_option.models import Asset
         
         # Normalize: "USDCHF-OTC" → "USDCHF_otc", "EURUSD" → "EURUSD"
-        normalized = asset_str.replace("-OTC", "_otc").replace("-otc", "_otc").replace("/", "")
+        normalized = asset_str.replace("-OTC", "_otc").replace("-otc", "_otc").replace(" ", "_").replace("/", "")
         
-        # Helper to search enum
-        def _find(name):
-            try:
-                return Asset[name]
-            except KeyError:
-                for member in Asset:
-                    if member.name.lower() == name.lower():
-                        return member
+        # The SDK's Asset enum has a dynamic _missing_ method, meaning we can 
+        # pass ANY string to it and it will create a valid Asset for the API.
+        # This prevents the bot from accidentally trading the OTC chart when the 
+        # signal meant the regular chart.
+        try:
+            return Asset(normalized)
+        except Exception:
             return None
-            
-        # Try exact match first
-        match = _find(normalized)
-        if match:
-            return match
-            
-        # If it wasn't found and doesn't have _otc, try with _otc
-        if not normalized.lower().endswith("_otc"):
-            match = _find(f"{normalized}_otc")
-            if match:
-                return match
-                
-        # If it wasn't found and has _otc, try without _otc
-        if normalized.lower().endswith("_otc"):
-            match = _find(normalized[:-4])
-            if match:
-                return match
-                
-        return None
 
     async def place_trade(self, request: TradeRequest) -> TradeResult:
         if self.client is None or not self.client.sio.connected:
