@@ -119,17 +119,33 @@ class PocketOptionDemoExecutor(TradeExecutor):
         # Normalize: "USDCHF-OTC" → "USDCHF_otc", "EURUSD" → "EURUSD"
         normalized = asset_str.replace("-OTC", "_otc").replace("-otc", "_otc").replace("/", "")
         
+        # Helper to search enum
+        def _find(name):
+            try:
+                return Asset[name]
+            except KeyError:
+                for member in Asset:
+                    if member.name.lower() == name.lower():
+                        return member
+            return None
+            
         # Try exact match first
-        try:
-            return Asset[normalized]
-        except KeyError:
-            pass
-        
-        # Try case-insensitive match
-        for member in Asset:
-            if member.name.lower() == normalized.lower():
-                return member
-        
+        match = _find(normalized)
+        if match:
+            return match
+            
+        # If it wasn't found and doesn't have _otc, try with _otc
+        if not normalized.lower().endswith("_otc"):
+            match = _find(f"{normalized}_otc")
+            if match:
+                return match
+                
+        # If it wasn't found and has _otc, try without _otc
+        if normalized.lower().endswith("_otc"):
+            match = _find(normalized[:-4])
+            if match:
+                return match
+                
         return None
 
     async def place_trade(self, request: TradeRequest) -> TradeResult:
