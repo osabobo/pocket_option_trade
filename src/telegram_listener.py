@@ -137,7 +137,8 @@ async def main():
         executor = DemoExecutor()
 
 
-    source_clean = source.replace("@", "").lower() if source else ""
+    sources = [s.strip() for s in source.split(',')] if source else []
+    sources_clean = [s.replace("@", "").lower() for s in sources]
 
     @client.on(events.NewMessage())
     async def handler(event):
@@ -148,17 +149,22 @@ async def main():
 
         print(f"[DEBUG-ALL] New message from: title='{chat_title}', username='{chat_username}', id='{chat_id}'")
 
-        # Bulletproof source matching
-        if source_clean:
+        # Bulletproof source matching for multiple sources
+        if sources:
             is_match = False
-            if chat_username.lower() == source_clean:
-                is_match = True
-            elif source.lower() in chat_title.lower():
-                is_match = True
-            elif chat_id == source:
-                is_match = True
-            elif source_clean in ["me", "self"] and event.is_private and event.out:
-                is_match = True
+            for src, src_clean in zip(sources, sources_clean):
+                if chat_username.lower() == src_clean:
+                    is_match = True
+                    break
+                elif src.lower() in chat_title.lower():
+                    is_match = True
+                    break
+                elif chat_id == src:
+                    is_match = True
+                    break
+                elif src_clean in ["me", "self"] and event.is_private and event.out:
+                    is_match = True
+                    break
             
             if not is_match:
                 return
