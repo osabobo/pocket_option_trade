@@ -109,6 +109,7 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
                 break
         else:
             print(f"[MARTINGALE] Unknown trade status: {check_result.status}. Stopping to be safe.")
+            await log_trade_to_sheets(signal, "UNKNOWN", mg_count)
             break
 
 async def main():

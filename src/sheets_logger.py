@@ -43,7 +43,13 @@ def format_trade_result(signal, status: str, mg_count: int) -> str:
     # Example format: ✅¹ 06:35 • 🇬🇧 GBP/USD 🇺🇸 OTC • Buy
     # or ❌³ 07:20 • 🇺🇸 USD/CAD 🇨🇦 OTC • Sell
     
-    emoji = "✅" if status == "WIN" else "❌"
+    if status == "WIN":
+        emoji = "✅"
+    elif status == "LOSS":
+        emoji = "❌"
+    else:
+        emoji = "⚠️"
+        
     superscript = SUPERSCRIPTS.get(mg_count, str(mg_count))
     
     # Use the signal time if available, otherwise current time
