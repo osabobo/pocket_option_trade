@@ -59,6 +59,58 @@ async def keep_alive_task():
                 print(f"[KEEP-ALIVE] Ping failed: {e}")
             await asyncio.sleep(600)  # Ping every 10 minutes (600 seconds)
 
+async def execute_with_martingale(executor, risk, signal, max_martingale=2, multiplier=2.2):
+    request = risk.make_request(signal)
+    current_amount = request.amount
+    mg_count = 0
+    
+    # Use signal's max_martingale if provided, but cap it to user's max preference (2).
+    # If signal doesn't specify (0), default to the user's preference.
+    allowed_mgs = signal.max_martingale if signal.max_martingale > 0 else max_martingale
+    allowed_mgs = min(allowed_mgs, max_martingale)
+    
+    while mg_count <= allowed_mgs:
+        print(f"[MARTINGALE] Executing trade (MG step {mg_count}/{allowed_mgs}): {signal.asset} {signal.direction.value} {signal.expiry_seconds}s ${current_amount:.2f}")
+        
+        # Create a new request for this step with the updated amount
+        mg_request = risk.make_request(signal)
+        mg_request.amount = current_amount
+        
+        result = await executor.place_trade(mg_request)
+        
+        if mg_count == 0:
+            risk.mark_submitted(signal)
+            
+        print({"event": "demo_trade", "mg_step": mg_count, "signal": signal.model_dump(), "trade": result.model_dump()})
+        
+        if not result.accepted or not result.trade_id:
+            print(f"[MARTINGALE] Trade rejected or missing trade_id. Aborting.")
+            break
+            
+        print(f"[MARTINGALE] Waiting {signal.expiry_seconds} seconds for trade to finish...")
+        # Wait the trade duration + 5 seconds for broker settlement
+        await asyncio.sleep(signal.expiry_seconds + 5)
+        
+        print(f"[MARTINGALE] Checking result for trade {result.trade_id}...")
+        check_result = await executor.get_trade_result(result.trade_id)
+        print(f"[MARTINGALE] Result for {result.trade_id}: {check_result.status}")
+        
+        if check_result.status == "WIN":
+            print(f"[MARTINGALE] Trade WON! Celebrating and stopping.")
+            break
+        elif check_result.status == "LOSS":
+            print(f"[MARTINGALE] Trade LOST.")
+            if mg_count < allowed_mgs:
+                mg_count += 1
+                current_amount *= multiplier
+                print(f"[MARTINGALE] Initiating Martingale step {mg_count}. New amount: ${current_amount:.2f}")
+            else:
+                print(f"[MARTINGALE] Max martingales ({allowed_mgs}) reached. Stopping.")
+                break
+        else:
+            print(f"[MARTINGALE] Unknown trade status: {check_result.status}. Stopping to be safe.")
+            break
+
 async def main():
     if "PORT" in os.environ:
         start_dummy_server()
@@ -182,9 +234,8 @@ async def main():
         if not ok:
             print({"event": "signal_rejected", "reason": reason})
             return
-        result = await executor.place_trade(risk.make_request(signal))
-        risk.mark_submitted(signal)
-        print({"event": "demo_trade", "signal": signal.model_dump(), "trade": result.model_dump()})
+            
+        asyncio.create_task(execute_with_martingale(executor, risk, signal))
 
     await client.start()
     
