@@ -188,6 +188,9 @@ async def main():
         if signal.signal_time:
             now_utc = datetime.datetime.now(datetime.timezone.utc)
             parts = list(map(int, signal.signal_time.split(':')))
+            sig_hour = parts[0]
+            sig_minute = parts[1]
+            sig_second = parts[2] if len(parts) > 2 else 0
             
             best_delay = None
             
@@ -195,7 +198,7 @@ async def main():
             if signal.timezone:
                 tz = parse_utc_offset(signal.timezone)
                 now_tz = now_utc.astimezone(tz)
-                target_tz = now_tz.replace(hour=parts[0], minute=parts[1], second=parts[2], microsecond=0)
+                target_tz = now_tz.replace(hour=sig_hour, minute=sig_minute, second=sig_second, microsecond=0)
                 if (target_tz - now_tz).total_seconds() < -43200:
                     target_tz += datetime.timedelta(days=1)
                 delay = (target_tz - now_tz).total_seconds()
@@ -211,7 +214,7 @@ async def main():
                 for offset_hours in range(-12, 15):
                     tz = datetime.timezone(datetime.timedelta(hours=offset_hours))
                     now_tz = now_utc.astimezone(tz)
-                    target_tz = now_tz.replace(hour=parts[0], minute=parts[1], second=parts[2], microsecond=0)
+                    target_tz = now_tz.replace(hour=sig_hour, minute=sig_minute, second=sig_second, microsecond=0)
                     
                     if (target_tz - now_tz).total_seconds() < -43200:
                         target_tz += datetime.timedelta(days=1)
