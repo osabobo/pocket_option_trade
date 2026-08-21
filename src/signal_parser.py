@@ -9,11 +9,17 @@ MG_RE = re.compile(r"(?:Max\s+|make up to\s+)?(\d+)\s+(?:martingale|Gale'?s?)", 
 
 def parse_signal(text: str, message_id: str | None = None) -> Signal | None:
     upper = text.upper()
-    if re.search(r"\b(UP|CALL|HIGH)\b", upper):
+    direction = None
+    if re.search(r"\b(CALL)\b", upper):
         direction = Direction.UP
-    elif re.search(r"\b(DOWN|PUT|LOW)\b", upper):
+    elif re.search(r"\b(PUT)\b", upper):
         direction = Direction.DOWN
-    else:
+    elif re.search(r"\b(UP|HIGH)\b", upper) and not re.search(r"\bMAKE UP TO\b", upper):
+        direction = Direction.UP
+    elif re.search(r"\b(DOWN|LOW)\b", upper):
+        direction = Direction.DOWN
+        
+    if not direction:
         return None
 
     expiry_match = EXPIRY_RE.search(text)
