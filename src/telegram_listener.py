@@ -87,11 +87,8 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
             print(f"[MARTINGALE] Trade rejected or missing trade_id. Aborting.")
             break
             
-        print(f"[MARTINGALE] Waiting {signal.expiry_seconds} seconds for trade to finish...")
-        # Wait the trade duration + 5 seconds for broker settlement
-        await asyncio.sleep(signal.expiry_seconds + 5)
-        
-        print(f"[MARTINGALE] Checking result for trade {result.trade_id}...")
+        print(f"[MARTINGALE] Waiting for trade {result.trade_id} to finish...")
+        # We do NOT manually sleep here because get_trade_result blocks until the broker sends the closing event.
         check_result = await executor.get_trade_result(result.trade_id)
         print(f"[MARTINGALE] Result for {result.trade_id}: {check_result.status}")
         
