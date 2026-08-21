@@ -66,6 +66,9 @@ def _log_to_sheets_sync(formatted_string: str):
     creds_json_str = os.environ.get("GOOGLE_SHEETS_CREDENTIALS_JSON")
     sheet_id = os.environ.get("GOOGLE_SHEET_ID")
     
+    if sheet_id:
+        sheet_id = sheet_id.strip()
+    
     if not creds_json_str or not sheet_id:
         print("[SHEETS] Missing GOOGLE_SHEETS_CREDENTIALS_JSON or GOOGLE_SHEET_ID in .env. Skipping Google Sheets logging.")
         return
