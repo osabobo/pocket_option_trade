@@ -60,9 +60,24 @@ def format_trade_result(signal, status: str, mg_count: int) -> str:
     elif direction_str == "Down":
         direction_str = "Sell"
         
-    return f"{emoji}{superscript} {time_str} • {asset_str} • {direction_str}"
+    return f"{emoji}{superscript} {time_str} • {asset_str} • {direction_str}", time_str
 
-def _log_to_sheets_sync(formatted_string: str):
+def get_session_header(time_str: str) -> str:
+    try:
+        hour = int(time_str.split(':')[0])
+    except Exception:
+        hour = 0
+        
+    if 0 <= hour < 6:
+        return "⚽ OVERNIGHT SESSION"
+    elif 6 <= hour < 12:
+        return "⛅ MORNING SESSION"
+    elif 12 <= hour < 18:
+        return "☀️ AFTERNOON SESSION"
+    else:
+        return "🌙 NIGHT SESSION"
+
+def _log_to_sheets_sync(formatted_string: str, time_str: str):
     creds_json_str = os.environ.get("GOOGLE_SHEETS_CREDENTIALS_JSON")
     sheet_id = os.environ.get("GOOGLE_SHEET_ID")
     
@@ -79,8 +94,10 @@ def _log_to_sheets_sync(formatted_string: str):
         sh = gc.open_by_key(sheet_id)
         worksheet = sh.sheet1
         
-        # Get today's date in format YYYY-MM-DD
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d 00:00:00")
+        # Get today's date in format DD/MM/YYYY and Day (e.g. Thu)
+        now_utc = datetime.now(timezone.utc)
+        today_str = now_utc.strftime("%d/%m/%Y")
+        day_str = now_utc.strftime("%a")
         
         # Find the column for today
         header_row = worksheet.row_values(1)
@@ -95,10 +112,26 @@ def _log_to_sheets_sync(formatted_string: str):
             # Create new column
             col_index = len(header_row) + 1
             worksheet.update_cell(1, col_index, today_str)
+            worksheet.update_cell(2, col_index, day_str)
+            
+        col_values = worksheet.col_values(col_index)
+        
+        session_header = get_session_header(time_str)
+        
+        if session_header not in col_values:
+            next_row = len(col_values) + 1
+            if next_row < 3:
+                next_row = 3
+            worksheet.update_cell(next_row, col_index, session_header)
+            worksheet.update_cell(next_row + 1, col_index, "-----------------------------")
+            
+            # Refetch to get updated length
+            col_values = worksheet.col_values(col_index)
             
         # Find the first empty row in that column
-        col_values = worksheet.col_values(col_index)
         next_row = len(col_values) + 1
+        if next_row < 3:
+            next_row = 3
         
         # Write the formatted string
         worksheet.update_cell(next_row, col_index, formatted_string)
@@ -111,6 +144,6 @@ async def log_trade_to_sheets(signal, status: str, mg_count: int):
     """
     Logs the trade result to Google Sheets asynchronously to avoid blocking the main thread.
     """
-    formatted_string = format_trade_result(signal, status, mg_count)
+    formatted_string, time_str = format_trade_result(signal, status, mg_count)
     # Run the synchronous gspread network calls in a thread pool
-    await asyncio.to_thread(_log_to_sheets_sync, formatted_string)
+    await asyncio.to_thread(_log_to_sheets_sync, formatted_string, time_str)
