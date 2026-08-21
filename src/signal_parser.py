@@ -2,10 +2,10 @@ import re
 from datetime import datetime, timezone
 from .models import Signal, Direction
 
-EXPIRY_RE = re.compile(r"Expires?\s+in\s+(\d+)\s*(second|seconds|sec|s|minute|minutes|min|m)\b", re.I)
-TIME_RE = re.compile(r"\b(\d{2}:\d{2}:\d{2})\b")
-TZ_RE = re.compile(r"\b(UTC[+-]\d{1,2}(?::\d{2})?)\b", re.I)
-MG_RE = re.compile(r"Max\s+(\d+)\s+martingale", re.I)
+EXPIRY_RE = re.compile(r"(?:Expires?\s+in|Expiration:?)\s+(\d+)\s*(second|seconds|sec|s|minute|minutes|min|m)\b", re.I)
+TIME_RE = re.compile(r"\b(\d{2}:\d{2}(?::\d{2})?)\b")
+TZ_RE = re.compile(r"\b(UTC\s*[+-]\s*\d{1,2}(?::\d{2})?)\b", re.I)
+MG_RE = re.compile(r"(?:Max\s+|make up to\s+)?(\d+)\s+(?:martingale|Gale'?s?)", re.I)
 
 def parse_signal(text: str, message_id: str | None = None) -> Signal | None:
     upper = text.upper()
@@ -26,7 +26,7 @@ def parse_signal(text: str, message_id: str | None = None) -> Signal | None:
 
     asset = None
     for token in re.findall(r"\b[A-Z][A-Z0-9_-]{4,11}\b", upper):
-        if token in {"TRADER", "SIGNALS", "EXPIRES", "MINUTE", "MARTINGALE"}:
+        if token in {"TRADER", "SIGNALS", "EXPIRES", "MINUTE", "MARTINGALE", "MARTIN"}:
             continue
         if "OTC" in token or len(token.replace("_", "").replace("-", "")) == 6:
             asset = token
