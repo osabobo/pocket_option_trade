@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from .signal_parser import parse_signal
 from .risk import RiskEngine
 from .executor import DemoExecutor
+from .sheets_logger import log_trade_to_sheets
 
 load_dotenv()
 
@@ -94,6 +95,7 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
         
         if check_result.status == "WIN":
             print(f"[MARTINGALE] Trade WON! Celebrating and stopping.")
+            asyncio.create_task(log_trade_to_sheets(signal, "WIN", mg_count))
             break
         elif check_result.status == "LOSS":
             print(f"[MARTINGALE] Trade LOST.")
@@ -103,6 +105,7 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
                 print(f"[MARTINGALE] Initiating Martingale step {mg_count}. New amount: ${current_amount:.2f}")
             else:
                 print(f"[MARTINGALE] Max martingales ({allowed_mgs}) reached. Stopping.")
+                asyncio.create_task(log_trade_to_sheets(signal, "LOSS", mg_count))
                 break
         else:
             print(f"[MARTINGALE] Unknown trade status: {check_result.status}. Stopping to be safe.")
