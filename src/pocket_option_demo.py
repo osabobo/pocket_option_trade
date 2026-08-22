@@ -187,9 +187,10 @@ class PocketOptionDemoExecutor(TradeExecutor):
             expected_profit = deal.profit if hasattr(deal, 'profit') else None
             
             status = "UNKNOWN"
-            if hasattr(deal, 'open_price') and hasattr(deal, 'close_price') and deal.close_price is not None:
+            if hasattr(deal, 'open_price') and hasattr(deal, 'close_price') and deal.close_price is not None and deal.close_price != 0.0:
                 # Use deal.command.value if it's an Enum, otherwise use the string itself
                 command_str = deal.command.value if hasattr(deal.command, 'value') else str(deal.command)
+                command_str = command_str.lower()
                 
                 if command_str == "call":
                     if deal.close_price > deal.open_price:
@@ -205,11 +206,8 @@ class PocketOptionDemoExecutor(TradeExecutor):
                         status = "LOSS"
                     else:
                         status = "TIE"
-            else:
-                # Fallback if prices are missing for some reason
-                status = "WIN" if expected_profit and expected_profit > 0 else "LOSS"
-
-            # If it's a loss, the actual realized profit is 0 (or negative stake)
+            
+            # If we STILL have UNKNOWN here, we don't assume WIN/LOSS.
             realized_profit = expected_profit if status == "WIN" else 0.0
             
             print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, expected_profit={expected_profit}, open={getattr(deal, 'open_price', None)}, close={getattr(deal, 'close_price', None)}")
@@ -227,8 +225,8 @@ class PocketOptionDemoExecutor(TradeExecutor):
         if not deal:
             print(f"[TRADE-RESULT] WARNING: Could not find deal {trade_id} in storage!")
             return TradeResult(
-                accepted=True, trade_id=trade_id, status="LOSS",
-                message="Deal not found in storage — defaulting to LOSS.",
+                accepted=True, trade_id=trade_id, status="UNKNOWN",
+                message="Deal not found in storage — reporting UNKNOWN.",
             )
         
         # Register the close event if not already registered
@@ -236,30 +234,17 @@ class PocketOptionDemoExecutor(TradeExecutor):
             self.deals_storage._close_deal_events[deal.id] = asyncio.Event()
         close_event = self.deals_storage._close_deal_events[deal.id]
         
-        # Poll loop: check the event, check the deal, check the socket — every 2 seconds.
-        # This ensures we NEVER hang on a dead socket.
+        # Poll loop: wait for the close_event from the websocket.
         elapsed = 0
         poll_interval = 2
         while elapsed < timeout:
-            # Check 1: Did the close event fire?
             if close_event.is_set():
                 deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
-                if deal and deal.closed:
-                    return _make_result(deal)
+                return _make_result(deal)
             
-            # Check 2: Is the deal already closed in storage? 
-            # (handles race condition where event was processed before we registered)
-            try:
-                deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
-                if deal and deal.closed:
-                    print(f"[TRADE-RESULT] Deal found closed in storage (poll).")
-                    return _make_result(deal)
-            except Exception:
-                pass
-            
-            # Note: We intentionally do NOT break out of the loop if the socket disconnects here.
-            # If we break early, Martingale will fire immediately while the trade is still running.
-            # The `elapsed < timeout` condition ensures we never hang indefinitely.
+            # Note: We do NOT poll `deal.closed` here because the SDK prematurely
+            # marks deals as closed using the expected expiration time.
+            # We ONLY rely on the websocket `SuccessCloseDealEvent` (which sets close_event).
             
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
@@ -267,12 +252,13 @@ class PocketOptionDemoExecutor(TradeExecutor):
         # Clean up the event listener
         self.deals_storage._close_deal_events.pop(deal.id, None)
         
-        # If we're here, either the socket died or we timed out — default to LOSS.
-        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} (elapsed={elapsed}s). Defaulting to LOSS for martingale.")
+        # If we're here, either the socket died or we timed out. We MUST NOT default to LOSS!
+        # If we blindly return LOSS, it causes runaway Martingale trades on network issues.
+        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} (elapsed={elapsed}s). Returning UNKNOWN.")
         return TradeResult(
             accepted=True,
             trade_id=trade_id,
-            status="LOSS",
-            message=f"Result unknown — defaulting to LOSS for martingale safety.",
+            status="UNKNOWN",
+            message=f"Result unknown (timeout or network error).",
         )
 
