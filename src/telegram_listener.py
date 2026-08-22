@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from .signal_parser import parse_signal
 from .risk import RiskEngine
 from .executor import DemoExecutor
+from .config import settings
 from .sheets_logger import log_trade_to_sheets
 
 load_dotenv()
@@ -263,8 +264,14 @@ async def main():
         if not ok:
             print({"event": "signal_rejected", "reason": reason})
             return
-            
-        asyncio.create_task(execute_with_martingale(executor, risk, signal))
+        
+        if settings.allow_martingale:
+            max_mg = settings.max_martingale_steps
+            print(f"[MARTINGALE] Martingale ENABLED for {signal.asset} (expiry={signal.expiry_seconds}s, max_steps={max_mg})")
+            asyncio.create_task(execute_with_martingale(executor, risk, signal, max_martingale=max_mg))
+        else:
+            print(f"[TRADE] Martingale disabled. Placing single trade for {signal.asset}.")
+            asyncio.create_task(execute_with_martingale(executor, risk, signal, max_martingale=0))
 
     await client.start()
     

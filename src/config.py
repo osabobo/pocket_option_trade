@@ -13,6 +13,7 @@ class Settings:
     max_consecutive_losses: int = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
     max_signal_age_seconds: int = int(os.getenv("MAX_SIGNAL_AGE_SECONDS", "30"))
     allow_martingale: bool = os.getenv("ALLOW_MARTINGALE", "false").lower() == "true"
+    max_martingale_steps: int = int(os.getenv("MAX_MARTINGALE_STEPS", "2"))
 
 settings = Settings()
 
