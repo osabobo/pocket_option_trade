@@ -181,15 +181,44 @@ class PocketOptionDemoExecutor(TradeExecutor):
         deal_uuid = uuid.UUID(trade_id)
         
         def _make_result(deal):
-            profit = deal.profit if hasattr(deal, 'profit') else None
-            status = "WIN" if profit and profit > 0 else "LOSS"
-            print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, profit={profit}")
+            # The 'profit' field in the PocketOption API often just stores the potential payout amount
+            # (e.g. 9.2 for a 92% payout on a $10 trade), even if the trade lost.
+            # We MUST determine the true outcome by comparing open_price and close_price.
+            expected_profit = deal.profit if hasattr(deal, 'profit') else None
+            
+            status = "UNKNOWN"
+            if hasattr(deal, 'open_price') and hasattr(deal, 'close_price') and deal.close_price is not None:
+                # Use deal.command.value if it's an Enum, otherwise use the string itself
+                command_str = deal.command.value if hasattr(deal.command, 'value') else str(deal.command)
+                
+                if command_str == "call":
+                    if deal.close_price > deal.open_price:
+                        status = "WIN"
+                    elif deal.close_price < deal.open_price:
+                        status = "LOSS"
+                    else:
+                        status = "TIE"
+                elif command_str == "put":
+                    if deal.close_price < deal.open_price:
+                        status = "WIN"
+                    elif deal.close_price > deal.open_price:
+                        status = "LOSS"
+                    else:
+                        status = "TIE"
+            else:
+                # Fallback if prices are missing for some reason
+                status = "WIN" if expected_profit and expected_profit > 0 else "LOSS"
+
+            # If it's a loss, the actual realized profit is 0 (or negative stake)
+            realized_profit = expected_profit if status == "WIN" else 0.0
+            
+            print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, expected_profit={expected_profit}, open={getattr(deal, 'open_price', None)}, close={getattr(deal, 'close_price', None)}")
             return TradeResult(
                 accepted=True,
                 trade_id=trade_id,
                 status=status,
                 result=str(deal),
-                pnl=float(profit) if profit else None,
+                pnl=float(realized_profit) if realized_profit is not None else None,
             )
         
         # Register the close event listener so the SDK can set it when the deal closes.
