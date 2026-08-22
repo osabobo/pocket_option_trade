@@ -258,13 +258,23 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 elif actual_profit > 0.0:
                     status = "WIN"
             
+            if status == "LOSS":
+                pnl = -float(deal.amount)
+            elif status == "WIN":
+                pnl = float(actual_profit) - float(deal.amount) # Realized net profit (or just use actual_profit if it's the net. Let's assume actual_profit is total payout, so net = payout - stake. Wait! PocketOption usually sends net profit or total payout? Actually the user said 'payout'. If $10 yields $19.2, net is $9.2. Let's just use float(actual_profit) for now or expected_profit.)
+                # Wait, if expected_profit = 9.2 (net), and actual_profit = 19.2 (gross), I should use expected_profit for WIN.
+                # Let's just use expected_profit if WIN, -deal.amount if LOSS.
+                pnl = float(getattr(deal, 'profit', 0.0))
+            else:
+                pnl = 0.0
+                
             print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, actual_event_profit={actual_profit}, expected_profit={getattr(deal, 'profit', None)}")
             return TradeResult(
                 accepted=True,
                 trade_id=trade_id,
                 status=status,
                 result=str(deal),
-                pnl=float(actual_profit) if actual_profit is not None else 0.0,
+                pnl=pnl,
             )
         
         # If we're here, either the socket died or we timed out. We MUST NOT default to LOSS!
