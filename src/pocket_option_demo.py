@@ -219,38 +219,53 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 pnl=float(realized_profit) if realized_profit is not None else None,
             )
         
-        # Register the close event listener so the SDK can set it when the deal closes.
-        # We do this manually instead of using check_deal_result to avoid its blocking wait.
-        deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
-        if not deal:
-            print(f"[TRADE-RESULT] WARNING: Could not find deal {trade_id} in storage!")
-            return TradeResult(
-                accepted=True, trade_id=trade_id, status="UNKNOWN",
-                message="Deal not found in storage — reporting UNKNOWN.",
-            )
+        # Register a custom listener to capture the raw SuccessCloseDealEvent.
+        # The broker sends the ACTUAL realized profit for the deal at the top level of this event,
+        # which avoids the issue of the Deal object containing `close_price=0.0`.
+        actual_profit = None
+        custom_close_event = asyncio.Event()
         
-        # Register the close event if not already registered
-        if deal.id not in self.deals_storage._close_deal_events:
-            self.deals_storage._close_deal_events[deal.id] = asyncio.Event()
-        close_event = self.deals_storage._close_deal_events[deal.id]
+        def on_close_deal(event):
+            for closed_deal in event.deals:
+                if closed_deal.id == deal_uuid:
+                    nonlocal actual_profit
+                    actual_profit = event.profit
+                    custom_close_event.set()
+        
+        # Subscribe to the event
+        unsub = self.client.on.success_close_deal(on_close_deal)
         
         # Poll loop: wait for the close_event from the websocket.
         elapsed = 0
         poll_interval = 2
         while elapsed < timeout:
-            if close_event.is_set():
-                deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
-                return _make_result(deal)
-            
-            # Note: We do NOT poll `deal.closed` here because the SDK prematurely
-            # marks deals as closed using the expected expiration time.
-            # We ONLY rely on the websocket `SuccessCloseDealEvent` (which sets close_event).
-            
+            if custom_close_event.is_set():
+                break
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
         
-        # Clean up the event listener
-        self.deals_storage._close_deal_events.pop(deal.id, None)
+        # Unsubscribe
+        if unsub:
+            unsub()
+            
+        if custom_close_event.is_set():
+            deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
+            
+            status = "UNKNOWN"
+            if actual_profit is not None:
+                if actual_profit == 0.0:
+                    status = "LOSS"
+                elif actual_profit > 0.0:
+                    status = "WIN"
+            
+            print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, actual_event_profit={actual_profit}, expected_profit={getattr(deal, 'profit', None)}")
+            return TradeResult(
+                accepted=True,
+                trade_id=trade_id,
+                status=status,
+                result=str(deal),
+                pnl=float(actual_profit) if actual_profit is not None else 0.0,
+            )
         
         # If we're here, either the socket died or we timed out. We MUST NOT default to LOSS!
         # If we blindly return LOSS, it causes runaway Martingale trades on network issues.
