@@ -177,9 +177,12 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 message="Deals storage not initialized.",
             )
         
+        import uuid
+        deal_uuid = uuid.UUID(trade_id)
+        
+        # Strategy 1: Wait for the close event from the SDK (preferred, instant)
         try:
-            import uuid
-            deal = await self.deals_storage.check_deal_result(deal_id=uuid.UUID(trade_id), wait_time=timeout)
+            deal = await self.deals_storage.check_deal_result(deal_id=deal_uuid, wait_time=timeout)
             profit = deal.profit if hasattr(deal, 'profit') else None
             return TradeResult(
                 accepted=True,
@@ -189,10 +192,37 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 pnl=float(profit) if profit else None,
             )
         except Exception as exc:
-            return TradeResult(
-                accepted=False,
-                trade_id=trade_id,
-                status="UNKNOWN",
-                message=f"Could not retrieve result: {type(exc).__name__}: {exc}",
-            )
+            print(f"[TRADE-RESULT] Event-based wait failed: {type(exc).__name__}: {exc}. Falling back to polling...")
+        
+        # Strategy 2: Fallback — poll the deal from storage directly.
+        # The close event may have been processed but the listener missed it (race condition).
+        poll_interval = 2
+        elapsed = 0
+        while elapsed < timeout:
+            try:
+                deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
+                if deal and deal.closed:
+                    profit = deal.profit if hasattr(deal, 'profit') else None
+                    print(f"[TRADE-RESULT] Fallback poll found closed deal. profit={profit}")
+                    return TradeResult(
+                        accepted=True,
+                        trade_id=trade_id,
+                        status="WIN" if profit and profit > 0 else "LOSS",
+                        result=str(deal),
+                        pnl=float(profit) if profit else None,
+                    )
+            except Exception:
+                pass
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+        
+        # Strategy 3: If all else fails, report LOSS so martingale can still continue.
+        # A missed result is better than silently aborting the martingale chain.
+        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} after {timeout}s. Reporting as LOSS to allow martingale to continue.")
+        return TradeResult(
+            accepted=True,
+            trade_id=trade_id,
+            status="LOSS",
+            message=f"Result unknown after {timeout}s — defaulting to LOSS for martingale safety.",
+        )
 

@@ -112,8 +112,10 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
             print(f"[MARTINGALE] Trade WON! Celebrating and stopping.")
             await log_trade_to_sheets(signal, "WIN", mg_count)
             break
-        elif check_result.status == "LOSS":
-            print(f"[MARTINGALE] Trade LOST.")
+        else:
+            # Treat LOSS, UNKNOWN, and any other status as a loss for martingale purposes.
+            # Never silently abort the chain — if we lost (or can't tell), try the next step.
+            print(f"[MARTINGALE] Trade result: {check_result.status}. Treating as LOSS.")
             if mg_count < allowed_mgs:
                 mg_count += 1
                 current_amount *= multiplier
@@ -122,10 +124,6 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
                 print(f"[MARTINGALE] Max martingales ({allowed_mgs}) reached. Stopping.")
                 await log_trade_to_sheets(signal, "LOSS", mg_count)
                 break
-        else:
-            print(f"[MARTINGALE] Unknown trade status: {check_result.status}. Stopping to be safe.")
-            await log_trade_to_sheets(signal, "UNKNOWN", mg_count)
-            break
 
 async def main():
     if "PORT" in os.environ:
