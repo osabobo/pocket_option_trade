@@ -192,30 +192,60 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 pnl=float(profit) if profit else None,
             )
         
-        # Strategy 1: Wait for the close event from the SDK (the normal fast path).
-        # Give it the full timeout - this should work if the SDK event fires correctly.
-        try:
-            deal = await self.deals_storage.check_deal_result(deal_id=deal_uuid, wait_time=timeout)
-            return _make_result(deal)
-        except Exception as exc:
-            print(f"[TRADE-RESULT] Event-based wait failed: {type(exc).__name__}: {exc}. Trying direct poll...")
+        # Register the close event listener so the SDK can set it when the deal closes.
+        # We do this manually instead of using check_deal_result to avoid its blocking wait.
+        deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
+        if not deal:
+            print(f"[TRADE-RESULT] WARNING: Could not find deal {trade_id} in storage!")
+            return TradeResult(
+                accepted=True, trade_id=trade_id, status="LOSS",
+                message="Deal not found in storage — defaulting to LOSS.",
+            )
         
-        # Strategy 2: The event listener missed the close. Check storage directly —
-        # the deal may have been updated by update_closed_deals even though
-        # success_close_deal didn't fire our listener.
-        # Only poll for a SHORT time (30s) since the trade already expired.
-        for _ in range(15):
+        # Register the close event if not already registered
+        if deal.id not in self.deals_storage._close_deal_events:
+            self.deals_storage._close_deal_events[deal.id] = asyncio.Event()
+        close_event = self.deals_storage._close_deal_events[deal.id]
+        
+        # Poll loop: check the event, check the deal, check the socket — every 2 seconds.
+        # This ensures we NEVER hang on a dead socket.
+        elapsed = 0
+        poll_interval = 2
+        while elapsed < timeout:
+            # Check 1: Did the close event fire?
+            if close_event.is_set():
+                deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
+                if deal and deal.closed:
+                    return _make_result(deal)
+            
+            # Check 2: Is the deal already closed in storage? 
+            # (handles race condition where event was processed before we registered)
             try:
                 deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
                 if deal and deal.closed:
-                    print(f"[TRADE-RESULT] Fallback poll found closed deal!")
+                    print(f"[TRADE-RESULT] Deal found closed in storage (poll).")
                     return _make_result(deal)
             except Exception:
                 pass
-            await asyncio.sleep(2)
+            
+            # Check 3: Is the socket still alive? If not, no point waiting.
+            try:
+                if not self.client.sio.connected:
+                    print(f"[TRADE-RESULT] WARNING: Socket disconnected while waiting for trade {trade_id}!")
+                    print(f"[TRADE-RESULT] Skipping to LOSS fallback — martingale will continue.")
+                    break
+            except Exception:
+                print(f"[TRADE-RESULT] WARNING: Could not check socket status. Breaking to be safe.")
+                break
+            
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
         
-        # Strategy 3: Nothing worked — default to LOSS so martingale continues.
-        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id}. Defaulting to LOSS for martingale.")
+        # Clean up the event listener
+        self.deals_storage._close_deal_events.pop(deal_uuid, None)
+        
+        # If we're here, either the socket died or we timed out — default to LOSS.
+        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} (elapsed={elapsed}s). Defaulting to LOSS for martingale.")
         return TradeResult(
             accepted=True,
             trade_id=trade_id,
