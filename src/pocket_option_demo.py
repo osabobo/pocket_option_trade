@@ -180,49 +180,46 @@ class PocketOptionDemoExecutor(TradeExecutor):
         import uuid
         deal_uuid = uuid.UUID(trade_id)
         
-        # Strategy 1: Wait for the close event from the SDK (preferred, instant)
-        try:
-            deal = await self.deals_storage.check_deal_result(deal_id=deal_uuid, wait_time=timeout)
+        def _make_result(deal):
             profit = deal.profit if hasattr(deal, 'profit') else None
+            status = "WIN" if profit and profit > 0 else "LOSS"
+            print(f"[TRADE-RESULT] Deal {trade_id} closed: status={status}, profit={profit}")
             return TradeResult(
                 accepted=True,
                 trade_id=trade_id,
-                status="WIN" if profit and profit > 0 else "LOSS",
+                status=status,
                 result=str(deal),
                 pnl=float(profit) if profit else None,
             )
-        except Exception as exc:
-            print(f"[TRADE-RESULT] Event-based wait failed: {type(exc).__name__}: {exc}. Falling back to polling...")
         
-        # Strategy 2: Fallback — poll the deal from storage directly.
-        # The close event may have been processed but the listener missed it (race condition).
-        poll_interval = 2
-        elapsed = 0
-        while elapsed < timeout:
+        # Strategy 1: Wait for the close event from the SDK (the normal fast path).
+        # Give it the full timeout - this should work if the SDK event fires correctly.
+        try:
+            deal = await self.deals_storage.check_deal_result(deal_id=deal_uuid, wait_time=timeout)
+            return _make_result(deal)
+        except Exception as exc:
+            print(f"[TRADE-RESULT] Event-based wait failed: {type(exc).__name__}: {exc}. Trying direct poll...")
+        
+        # Strategy 2: The event listener missed the close. Check storage directly —
+        # the deal may have been updated by update_closed_deals even though
+        # success_close_deal didn't fire our listener.
+        # Only poll for a SHORT time (30s) since the trade already expired.
+        for _ in range(15):
             try:
                 deal = await self.deals_storage.get_deal(deal_id=deal_uuid)
                 if deal and deal.closed:
-                    profit = deal.profit if hasattr(deal, 'profit') else None
-                    print(f"[TRADE-RESULT] Fallback poll found closed deal. profit={profit}")
-                    return TradeResult(
-                        accepted=True,
-                        trade_id=trade_id,
-                        status="WIN" if profit and profit > 0 else "LOSS",
-                        result=str(deal),
-                        pnl=float(profit) if profit else None,
-                    )
+                    print(f"[TRADE-RESULT] Fallback poll found closed deal!")
+                    return _make_result(deal)
             except Exception:
                 pass
-            await asyncio.sleep(poll_interval)
-            elapsed += poll_interval
+            await asyncio.sleep(2)
         
-        # Strategy 3: If all else fails, report LOSS so martingale can still continue.
-        # A missed result is better than silently aborting the martingale chain.
-        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} after {timeout}s. Reporting as LOSS to allow martingale to continue.")
+        # Strategy 3: Nothing worked — default to LOSS so martingale continues.
+        print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id}. Defaulting to LOSS for martingale.")
         return TradeResult(
             accepted=True,
             trade_id=trade_id,
             status="LOSS",
-            message=f"Result unknown after {timeout}s — defaulting to LOSS for martingale safety.",
+            message=f"Result unknown — defaulting to LOSS for martingale safety.",
         )
 
