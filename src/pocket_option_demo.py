@@ -165,7 +165,7 @@ class PocketOptionDemoExecutor(TradeExecutor):
                 message=f"Pocket Option demo request failed: {type(exc).__name__}: {exc}",
             )
 
-    async def get_trade_result(self, trade_id: str) -> TradeResult:
+    async def get_trade_result(self, trade_id: str, timeout: int = 600) -> TradeResult:
         if self.client is None:
             await self.connect()
         
@@ -179,7 +179,7 @@ class PocketOptionDemoExecutor(TradeExecutor):
         
         try:
             import uuid
-            deal = await self.deals_storage.check_deal_result(deal_id=uuid.UUID(trade_id))
+            deal = await self.deals_storage.check_deal_result(deal_id=uuid.UUID(trade_id), wait_time=timeout)
             profit = deal.profit if hasattr(deal, 'profit') else None
             return TradeResult(
                 accepted=True,

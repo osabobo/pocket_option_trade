@@ -103,7 +103,9 @@ async def execute_with_martingale(executor, risk, signal, max_martingale=2, mult
             
         print(f"[MARTINGALE] Waiting for trade {result.trade_id} to finish...")
         # We do NOT manually sleep here because get_trade_result blocks until the broker sends the closing event.
-        check_result = await executor.get_trade_result(result.trade_id)
+        # Add 30 seconds buffer to the expiry for the network delay
+        timeout_seconds = signal.expiry_seconds + 60
+        check_result = await executor.get_trade_result(result.trade_id, timeout=timeout_seconds)
         print(f"[MARTINGALE] Result for {result.trade_id}: {check_result.status}")
         
         if check_result.status == "WIN":
