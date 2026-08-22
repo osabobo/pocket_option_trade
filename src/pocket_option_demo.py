@@ -257,21 +257,15 @@ class PocketOptionDemoExecutor(TradeExecutor):
             except Exception:
                 pass
             
-            # Check 3: Is the socket still alive? If not, no point waiting.
-            try:
-                if not self.client.sio.connected:
-                    print(f"[TRADE-RESULT] WARNING: Socket disconnected while waiting for trade {trade_id}!")
-                    print(f"[TRADE-RESULT] Skipping to LOSS fallback — martingale will continue.")
-                    break
-            except Exception:
-                print(f"[TRADE-RESULT] WARNING: Could not check socket status. Breaking to be safe.")
-                break
+            # Note: We intentionally do NOT break out of the loop if the socket disconnects here.
+            # If we break early, Martingale will fire immediately while the trade is still running.
+            # The `elapsed < timeout` condition ensures we never hang indefinitely.
             
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
         
         # Clean up the event listener
-        self.deals_storage._close_deal_events.pop(deal_uuid, None)
+        self.deals_storage._close_deal_events.pop(deal.id, None)
         
         # If we're here, either the socket died or we timed out — default to LOSS.
         print(f"[TRADE-RESULT] WARNING: Could not determine result for {trade_id} (elapsed={elapsed}s). Defaulting to LOSS for martingale.")
