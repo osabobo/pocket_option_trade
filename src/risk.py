@@ -18,8 +18,7 @@ class RiskEngine:
     def approve(self, signal: Signal) -> tuple[bool, str]:
         if signal.telegram_message_id and signal.telegram_message_id in self.state.seen_message_ids:
             return False, "duplicate_signal"
-        if self.state.trades >= settings.max_daily_trades:
-            return False, "daily_trade_limit"
+
         if self.state.pnl <= -abs(settings.max_daily_loss):
             return False, "daily_loss_limit"
         if self.state.consecutive_losses >= settings.max_consecutive_losses:
